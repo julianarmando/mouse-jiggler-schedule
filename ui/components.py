@@ -55,9 +55,6 @@ class StatusBar(ctk.CTkFrame):
         self._status_label = ctk.CTkLabel(self, text="Stopped", text_color="#6b7280")
         self._status_label.grid(row=0, column=1, padx=8, pady=10)
 
-        self._zen_label = ctk.CTkLabel(self, text="", text_color="#22c55e")
-        self._zen_label.grid(row=0, column=2, padx=16, pady=10, sticky="e")
-
     def set_status(self, status: str) -> None:
         if "Active" in status:
             color = "#22c55e"
@@ -66,6 +63,3 @@ class StatusBar(ctk.CTkFrame):
         else:
             color = "#6b7280"
         self._status_label.configure(text=status, text_color=color)
-
-    def set_zen(self, enabled: bool) -> None:
-        self._zen_label.configure(text="Zen 🍃" if enabled else "")

@@ -31,12 +31,10 @@ class TrayManager:
     def __init__(
         self,
         on_toggle: Callable[[], None],
-        on_zen_toggle: Callable[[], None],
         on_show: Callable[[], None],
         on_quit: Callable[[], None],
     ):
         self._on_toggle = on_toggle
-        self._on_zen_toggle = on_zen_toggle
         self._on_show = on_show
         self._on_quit = on_quit
         self._icon: Optional[object] = None
@@ -50,7 +48,6 @@ class TrayManager:
         img = _make_icon(_COLORS["stopped"])
         menu = pystray.Menu(
             pystray.MenuItem("Toggle Jiggler", self._on_toggle, default=True),
-            pystray.MenuItem("Zen Mode", self._on_zen_toggle),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Show Window", self._on_show),
             pystray.Menu.SEPARATOR,

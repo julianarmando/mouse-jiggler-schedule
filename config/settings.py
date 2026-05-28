@@ -8,7 +8,7 @@ from typing import List
 
 @dataclass
 class MovementConfig:
-    mode: str = "micro_jiggle"
+    mode: str = "loop"
     amplitude: int = 10
     interval_base: int = 30
     interval_variance: float = 0.3
@@ -29,7 +29,6 @@ class ScheduleEntry:
 @dataclass
 class AppConfig:
     movement: MovementConfig = field(default_factory=MovementConfig)
-    zen_mode: bool = False
     schedule_enabled: bool = True
     manual_override: bool = False
     schedule: List[ScheduleEntry] = field(default_factory=list)
@@ -81,7 +80,6 @@ class Settings:
     def _to_dict(config: AppConfig) -> dict:
         return {
             "movement": asdict(config.movement),
-            "zen_mode": config.zen_mode,
             "schedule_enabled": config.schedule_enabled,
             "manual_override": config.manual_override,
             "schedule": [asdict(e) for e in config.schedule],
@@ -95,7 +93,7 @@ class Settings:
     def _from_dict(data: dict) -> AppConfig:
         m = data.get("movement", {})
         movement = MovementConfig(
-            mode=m.get("mode", "micro_jiggle"),
+            mode=m.get("mode", "loop"),
             amplitude=int(m.get("amplitude", 10)),
             interval_base=int(m.get("interval_base", 30)),
             interval_variance=float(m.get("interval_variance", 0.3)),
@@ -115,7 +113,6 @@ class Settings:
         ]
         return AppConfig(
             movement=movement,
-            zen_mode=bool(data.get("zen_mode", False)),
             schedule_enabled=bool(data.get("schedule_enabled", True)),
             manual_override=bool(data.get("manual_override", False)),
             schedule=schedule,

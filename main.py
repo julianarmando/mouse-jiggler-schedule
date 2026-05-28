@@ -17,15 +17,6 @@ def main() -> None:
             status = engine.get_status()
             app_ref[0].after(0, lambda: app_ref[0]._apply_status(status))
 
-    def on_tray_zen() -> None:
-        new_val = not settings.config.zen_mode
-        settings.config.zen_mode = new_val
-        settings.save()
-        engine.set_zen(new_val)
-        if app_ref:
-            app_ref[0].after(0, lambda: app_ref[0]._zen_var.set(new_val))
-            app_ref[0].after(0, lambda: app_ref[0]._status_bar.set_zen(new_val))
-
     def on_tray_show() -> None:
         if app_ref:
             app_ref[0].after(0, app_ref[0].show)
@@ -38,7 +29,6 @@ def main() -> None:
 
     tray = TrayManager(
         on_toggle=on_tray_toggle,
-        on_zen_toggle=on_tray_zen,
         on_show=on_tray_show,
         on_quit=on_tray_quit,
     )

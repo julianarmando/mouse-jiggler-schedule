@@ -10,17 +10,6 @@ from jiggler.movements import BaseMovement, create_movement
 from jiggler.scheduler import ScheduleEvaluator, ScheduleManager
 
 
-_ZEN_CONFIG = MovementConfig(
-    mode="micro_jiggle",
-    amplitude=2,
-    interval_base=60,
-    interval_variance=0.8,
-    speed=1.0,
-    jitter=0.0,
-    smooth_movement=True,
-)
-
-
 class Status:
     ACTIVE_SCHEDULED = "Active (scheduled)"
     ACTIVE_OVERRIDE = "Active (manual override)"
@@ -45,7 +34,7 @@ class JigglerEngine(threading.Thread):
         self._schedule_manager = ScheduleManager(on_tick=self.apply_schedule)
         self._movement: BaseMovement = create_movement(settings.config.movement.mode)
         self._origin: Optional[tuple[float, float]] = None
-        self._zen = False
+        self._last_engine_pos: Optional[tuple[float, float]] = None
         self._current_status = Status.STOPPED
 
     # ── Thread lifecycle ──────────────────────────────────────────────────
@@ -70,6 +59,7 @@ class JigglerEngine(threading.Thread):
     def resume(self) -> None:
         with self._lock:
             self._origin = None
+            self._last_engine_pos = None
             self._movement.reset()
             self._running.set()
         self._emit_status()
@@ -78,6 +68,7 @@ class JigglerEngine(threading.Thread):
         with self._lock:
             self._running.clear()
             self._origin = None
+            self._last_engine_pos = None
         self._emit_status()
 
     def toggle(self) -> None:
@@ -93,14 +84,7 @@ class JigglerEngine(threading.Thread):
         with self._lock:
             self._movement = create_movement(mode)
             self._origin = None
-
-    def set_zen(self, enabled: bool) -> None:
-        with self._lock:
-            self._zen = enabled
-            mode = "micro_jiggle" if enabled else self._settings.config.movement.mode
-            self._movement = create_movement(mode)
-            self._origin = None
-        self._emit_status()
+            self._last_engine_pos = None
 
     def get_status(self) -> str:
         return self._current_status
@@ -137,34 +121,45 @@ class JigglerEngine(threading.Thread):
 
     def _tick(self) -> None:
         import pyautogui
-        mc = self._effective_config()
+        mc = self._settings.config.movement
         try:
             cur_x, cur_y = pyautogui.position()
+
+            if self._last_engine_pos is not None:
+                lx, ly = self._last_engine_pos
+                if abs(cur_x - lx) > 4 or abs(cur_y - ly) > 4:
+                    self._origin = None
+                    self._movement.reset()
+
             if self._origin is None:
                 self._origin = (float(cur_x), float(cur_y))
-            dx, dy = self._movement.compute_offset(mc.amplitude, mc.jitter)
-            target_x = self._origin[0] + dx
-            target_y = self._origin[1] + dy
-            rel_x = target_x - cur_x
-            rel_y = target_y - cur_y
-            if mc.smooth_movement:
-                self._smooth_move(rel_x, rel_y, mc.speed)
-            else:
-                pyautogui.moveRel(int(rel_x), int(rel_y), duration=0)
+
+            ox, oy = self._origin
+            path = self._movement.get_path(mc.amplitude, mc.jitter)
+            step_delay = max(0.008, 0.04 / mc.speed)
+            last_moved_to = (ox, oy)
+
+            for dx, dy in path:
+                if self._stop.is_set() or not self._running.is_set():
+                    return
+                cur = pyautogui.position()
+                # Abort animation if user moved the mouse
+                if abs(cur[0] - last_moved_to[0]) > 6 or abs(cur[1] - last_moved_to[1]) > 6:
+                    self._origin = None
+                    self._last_engine_pos = None
+                    return
+                target_x = ox + dx
+                target_y = oy + dy
+                rel_x = round(target_x - cur[0])
+                rel_y = round(target_y - cur[1])
+                if rel_x != 0 or rel_y != 0:
+                    pyautogui.moveRel(rel_x, rel_y, duration=0)
+                last_moved_to = (target_x, target_y)
+                time.sleep(step_delay)
+
+            self._last_engine_pos = last_moved_to
         except Exception:
             pass
-
-    def _smooth_move(self, rel_x: float, rel_y: float, speed: float) -> None:
-        import pyautogui
-        steps = max(3, int(8 * speed))
-        sx = rel_x / steps
-        sy = rel_y / steps
-        delay = max(0.003, 0.015 / speed)
-        for _ in range(steps):
-            if self._stop.is_set() or not self._running.is_set():
-                return
-            pyautogui.moveRel(sx, sy, duration=0)
-            time.sleep(delay)
 
     def _interruptible_sleep(self, seconds: float) -> None:
         deadline = time.monotonic() + seconds
@@ -175,12 +170,9 @@ class JigglerEngine(threading.Thread):
             self._stop.wait(timeout=min(0.5, remaining))
 
     def _compute_interval(self) -> float:
-        mc = self._effective_config()
+        mc = self._settings.config.movement
         factor = 1.0 + random.uniform(-mc.interval_variance, mc.interval_variance)
         return max(1.0, mc.interval_base * factor)
-
-    def _effective_config(self) -> MovementConfig:
-        return _ZEN_CONFIG if self._zen else self._settings.config.movement
 
     def _emit_status(self) -> None:
         config = self._settings.config

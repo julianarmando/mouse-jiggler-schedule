@@ -40,19 +40,20 @@ class MovementTab(ctk.CTkFrame):
         self._amplitude.grid(row=row, column=0, sticky="w", padx=16, pady=4)
         row += 1
 
-        # Interval + Variance on same row
-        pair = ctk.CTkFrame(self, fg_color="transparent")
-        pair.grid(row=row, column=0, sticky="w", padx=16, pady=4)
+        # Interval
         self._interval = LabeledSlider(
-            pair, "Interval", 5, 300, mc.interval_base,
+            self, "Interval", 5, 300, mc.interval_base,
             lambda v: f"{int(v)}s", self._on_interval_change,
         )
-        self._interval.pack(side="left")
+        self._interval.grid(row=row, column=0, sticky="w", padx=16, pady=4)
+        row += 1
+
+        # Variance
         self._variance = LabeledSlider(
-            pair, "Variance", 0.0, 1.0, mc.interval_variance,
+            self, "Variance", 0.0, 1.0, mc.interval_variance,
             lambda v: f"{int(v * 100)}%", self._on_variance_change,
         )
-        self._variance.pack(side="left", padx=(16, 0))
+        self._variance.grid(row=row, column=0, sticky="w", padx=16, pady=4)
         row += 1
 
         # Speed
@@ -68,18 +69,7 @@ class MovementTab(ctk.CTkFrame):
             self, "Jitter", 0.0, 1.0, mc.jitter,
             lambda v: f"{int(v * 100)}%", self._on_jitter_change,
         )
-        self._jitter.grid(row=row, column=0, sticky="w", padx=16, pady=4)
-        row += 1
-
-        # Smooth movement
-        smooth_row = ctk.CTkFrame(self, fg_color="transparent")
-        smooth_row.grid(row=row, column=0, sticky="w", padx=16, pady=(4, 12))
-        ctk.CTkLabel(smooth_row, text="Smooth motion:", width=120, anchor="w").pack(side="left")
-        self._smooth_var = ctk.BooleanVar(value=mc.smooth_movement)
-        ctk.CTkSwitch(
-            smooth_row, text="", variable=self._smooth_var,
-            command=self._on_smooth_change, width=52,
-        ).pack(side="left", padx=(8, 0))
+        self._jitter.grid(row=row, column=0, sticky="w", padx=16, pady=(4, 12))
 
     # ── helpers ──────────────────────────────────────────────────────────
 
@@ -88,7 +78,7 @@ class MovementTab(ctk.CTkFrame):
         for k, v in MOVEMENT_LABELS.items():
             if v == label:
                 return k
-        return "micro_jiggle"
+        return "loop"
 
     # ── callbacks ─────────────────────────────────────────────────────────
 
@@ -117,16 +107,11 @@ class MovementTab(ctk.CTkFrame):
         self._settings.config.movement.jitter = round(v, 2)
         self._settings.save()
 
-    def _on_smooth_change(self) -> None:
-        self._settings.config.movement.smooth_movement = self._smooth_var.get()
-        self._settings.save()
-
     def refresh(self) -> None:
         mc = self._settings.config.movement
-        self._mode_var.set(MOVEMENT_LABELS.get(mc.mode, "Micro Jiggle"))
+        self._mode_var.set(MOVEMENT_LABELS.get(mc.mode, "Loop"))
         self._amplitude.set(mc.amplitude)
         self._interval.set(mc.interval_base)
         self._variance.set(mc.interval_variance)
         self._speed.set(mc.speed)
         self._jitter.set(mc.jitter)
-        self._smooth_var.set(mc.smooth_movement)

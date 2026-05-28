@@ -57,20 +57,14 @@ class MouseJigglerApp(ctk.CTk):
             on_startup_change=self._on_startup_change,
         ).pack(fill="both", expand=True)
 
-        # Controls row: toggle + zen
+        # Controls row
         controls = ctk.CTkFrame(self, fg_color="transparent")
         controls.grid(row=2, column=0, sticky="ew", padx=16, pady=(4, 12))
 
         self._toggle_btn = ctk.CTkButton(
             controls, text="Start", command=self._toggle, width=120,
         )
-        self._toggle_btn.pack(side="left", padx=(0, 12))
-
-        self._zen_var = ctk.BooleanVar(value=self._settings.config.zen_mode)
-        ctk.CTkSwitch(
-            controls, text="Zen Mode",
-            variable=self._zen_var, command=self._on_zen_toggle,
-        ).pack(side="left")
+        self._toggle_btn.pack(side="left")
 
     # ── Accessibility check ───────────────────────────────────────────────
 
@@ -116,13 +110,6 @@ class MouseJigglerApp(ctk.CTk):
         self._toggle_btn.configure(text="Pause" if self._engine.is_running() else "Start")
         self._status_bar.set_status(self._engine.get_status())
         self._tray.update_state(self._engine.get_status())
-
-    def _on_zen_toggle(self) -> None:
-        enabled = self._zen_var.get()
-        self._settings.config.zen_mode = enabled
-        self._settings.save()
-        self._engine.set_zen(enabled)
-        self._status_bar.set_zen(enabled)
 
     def _on_movement_change(self) -> None:
         self._engine.set_mode(self._settings.config.movement.mode)
