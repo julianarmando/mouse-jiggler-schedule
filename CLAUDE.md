@@ -16,7 +16,7 @@ with fine-grained control over how and when the mouse moves.
 | UI | CustomTkinter | Modern look, native feel, easy theming |
 | Mouse control | pyautogui + pynput | Cross-platform mouse movement and global hotkeys |
 | System tray | pystray + Pillow | Cross-platform tray icon with menu |
-| Scheduling | APScheduler | Cron-like scheduling with time window support |
+| Scheduling | APScheduler | Fires schedule evaluation every 60s in background |
 | Config persistence | JSON via built-in `json` | Simple, human-readable, no ORM needed |
 | Packaging | PyInstaller | Generates .exe (Windows) and .app (macOS) |
 | IDE | PyCharm | Primary development environment |
@@ -27,29 +27,27 @@ with fine-grained control over how and when the mouse moves.
 
 ```
 mouse_jiggler/
-├── main.py                  # Entry point, initializes app and tray
-├── app.py                   # Main window (CustomTkinter), wires everything together
+├── main.py                  # Entry point, wires engine + tray + app
+├── app.py                   # Main window (CustomTkinter)
 ├── jiggler/
 │   ├── __init__.py
-│   ├── engine.py            # Core movement logic, runs in background thread
-│   ├── movements.py         # All movement type implementations
-│   └── scheduler.py        # Schedule evaluation logic (time windows, days)
+│   ├── engine.py            # Core movement logic, background thread
+│   ├── movements.py         # Movement type implementations
+│   └── scheduler.py         # Schedule evaluation + APScheduler wrapper
 ├── ui/
 │   ├── __init__.py
-│   ├── tab_movement.py      # Tab: movement type selector + randomization options
+│   ├── tab_movement.py      # Tab: movement type + randomization options
 │   ├── tab_schedule.py      # Tab: schedule editor (days + time ranges)
-│   ├── tab_settings.py      # Tab: general settings (hotkey, startup, tray behavior)
-│   └── components.py        # Reusable UI widgets
+│   ├── tab_settings.py      # Tab: general settings (startup, tray, theme)
+│   └── components.py        # Reusable widgets (LabeledSlider, StatusBar)
 ├── config/
 │   ├── __init__.py
-│   └── settings.py          # Load/save config.json, defaults, validation
+│   └── settings.py          # Load/save config.json, dataclasses, defaults
 ├── utils/
 │   ├── __init__.py
-│   ├── platform.py          # OS detection helpers, startup registration
+│   ├── platform.py          # OS detection, startup registration, accessibility check
 │   └── tray.py              # System tray icon and menu
-├── assets/
-│   ├── icon.png             # App icon (used for window and tray)
-│   └── icon.ico             # Windows-specific icon
+├── assets/                  # Icon assets (generated programmatically if absent)
 ├── config.json              # Auto-generated user config (gitignored)
 ├── requirements.txt
 └── CLAUDE.md                # This file
@@ -57,50 +55,39 @@ mouse_jiggler/
 
 ---
 
-## Core features to implement
+## Core features
 
 ### 1. Movement types
 
-Each movement type is a function in `movements.py` that receives the current mouse
-position and returns a new (x, y) position. The engine calls it on each tick.
+Two movement types, both implemented as classes inheriting `BaseMovement` in `movements.py`.
+
+The movement API uses `get_path(amplitude, jitter) -> list[tuple[float, float]]`:
+- Returns a list of `(dx, dy)` offsets from the **origin** (cursor position when jiggling started).
+- The **last point must always be `(0.0, 0.0)`** so the cursor returns to its start position after each cycle.
+- The engine iterates through the path with a per-step delay driven by `speed`.
 
 | Mode | Behavior |
 |---|---|
-| `micro_jiggle` | Moves 1-3px in a random direction, almost invisible |
-| `circular` | Orbits a fixed radius around the original position |
-| `random_walk` | Soft random drift, accumulates then recenters slowly |
-| `figure_eight` | Smooth figure-8 lemniscate path |
-| `diagonal_bounce` | Goes diagonally, reverses on reaching amplitude limit |
-
-All modes must use **interpolated movement** (move gradually, not teleport) when
-`smooth_movement` is enabled in config.
+| `loop` | Smooth circular orbit. 40 steps, ~1.6s animation at speed 1.0. Traces a circle centered at `(0, amplitude/2)` with radius `amplitude/2`, starting and ending at origin. |
+| `zen` | Barely visible. 10 steps with sine envelope. Drifts up to 2px (hard cap regardless of amplitude setting) and returns smoothly. |
 
 ### 2. Randomization options
 
-Exposed as sliders/inputs in the UI, stored in config:
+Exposed as sliders in the Movement tab, stored in config:
 
-- `amplitude` (int, 1-50px): max distance from origin point
-- `interval_base` (int, seconds): base time between movements
-- `interval_variance` (float, 0.0-1.0): random variation factor on interval
+- `amplitude` (int, 1–50px): radius of the loop orbit. Ignored by Zen (always ≤ 2px).
+- `interval_base` (int, seconds): wait time between animation cycles.
+- `interval_variance` (float, 0.0–1.0): random variation on the interval.
   - Actual interval = `interval_base * (1 + random(-variance, +variance))`
-- `speed` (float, 0.1-2.0): movement speed multiplier
-- `jitter` (float, 0.0-1.0): additional pixel noise on top of the base pattern
+- `speed` (float, 0.1–2.0): controls per-step delay inside the animation.
+  - `step_delay = max(0.008, 0.04 / speed)` seconds per path step.
+- `jitter` (float, 0.0–1.0): additional pixel noise (currently passed to `get_path` but not yet used by Loop/Zen).
 
-### 3. Zen Mode
+`smooth_movement` remains in the config dataclass (for future use) but has no UI control and does not affect the engine — animations are always smooth.
 
-A toggle that overrides movement settings with maximum stealth values:
-- Forces `micro_jiggle` mode
-- Sets amplitude to 1-2px
-- Sets interval to 45-90s with high variance (0.8)
-- Enables smooth movement
-- Disables jitter
-- Shows a "Zen" indicator in the UI and tray icon
+### 3. Schedule
 
-Zen mode does NOT modify the saved config. It is a runtime overlay.
-
-### 4. Schedule
-
-Stored as a list of schedule entries in config.json:
+Stored as a list of entries in config.json. The `ScheduleManager` uses APScheduler's `BackgroundScheduler` to fire `engine.apply_schedule()` every 60 seconds. `ScheduleEvaluator` contains the pure time-window logic.
 
 ```json
 {
@@ -116,58 +103,59 @@ Stored as a list of schedule entries in config.json:
 }
 ```
 
-The scheduler checks every minute whether the current local time falls inside any
-enabled schedule entry. If it does, the jiggler is active. If not, it pauses.
+The engine checks:
+1. `manual_override = true` → always active, ignore schedule.
+2. `schedule_enabled = false` OR `schedule` is empty → no automatic control.
+3. Otherwise: activate if current time is inside any enabled entry, pause if not.
 
-The UI shows a clear visual indicator: "Active (scheduled)" vs "Paused (outside schedule)"
-vs "Active (manual override)".
+Status labels shown in the UI:
+- `"Active (scheduled)"` — running due to schedule
+- `"Active (manual override)"` — running due to override
+- `"Active"` — running, no schedule configured
+- `"Paused (outside schedule)"` — auto-paused by schedule
+- `"Stopped"` — manually stopped
 
-Manual override: user can force-enable even outside scheduled hours via a toggle in the UI.
+### 4. System tray
 
-### 5. System tray
-
-Always present when the app is running. Icon changes to reflect state:
+Always present. Icon color reflects state:
 - Green = active
 - Yellow = paused (outside schedule)
-- Gray = disabled (user manually stopped)
+- Gray = stopped
+
+Icons are generated programmatically with Pillow (colored circles, 64×64 RGBA).
 
 Tray menu:
-- Toggle jiggler (Start / Pause)
-- Zen Mode (checkmark)
-- Show window
-- Separator
+- Toggle Jiggler (default action)
+- Show Window
 - Quit
 
-### 6. Global hotkey
+### 5. Global hotkey
 
-Configurable in settings. Default: `Ctrl+Shift+J`.
-Toggles the jiggler on/off from anywhere without opening the window.
-Uses `pynput.keyboard.GlobalHotKeys`.
+Defined in config (`hotkey` field). Not yet wired to `pynput` — field exists in config but the listener is not implemented. Default value: `"ctrl+shift+j"`.
 
-### 7. Startup with OS (no admin required)
+### 6. Startup with OS (no admin required)
 
-- **Windows**: writes a key to `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`
-  using the `winreg` module. No admin needed.
-- **macOS**: creates a LaunchAgent plist at `~/Library/LaunchAgents/com.mousejiggler.plist`.
+- **Windows**: `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run` via `winreg`.
+- **macOS**: LaunchAgent plist at `~/Library/LaunchAgents/com.mousejiggler.plist`.
 
-Handled in `utils/platform.py` with `if platform.system() == "Windows"` branching.
+Handled in `utils/platform.py`. Toggle in Settings tab calls `platform_utils.set_startup(enabled)`.
 
-### 8. Config persistence
+### 7. Config persistence
 
-Config is saved to:
+Config path:
 - Windows: `%APPDATA%\MouseJiggler\config.json`
 - macOS: `~/Library/Application Support/MouseJiggler/config.json`
 
-Auto-saves on any change. Loads on startup. If missing, creates from defaults.
+Auto-saves on every UI change. Loads on startup. Creates from defaults if missing.
 
 ---
 
-## Config schema (full default)
+## Config schema (current defaults)
 
 ```json
 {
   "movement": {
-    "mode": "micro_jiggle",
+    "mode": "loop",
     "amplitude": 10,
     "interval_base": 30,
     "interval_variance": 0.3,
@@ -175,7 +163,6 @@ Auto-saves on any change. Loads on startup. If missing, creates from defaults.
     "jitter": 0.0,
     "smooth_movement": true
   },
-  "zen_mode": false,
   "schedule_enabled": true,
   "manual_override": false,
   "schedule": [],
@@ -190,54 +177,57 @@ Auto-saves on any change. Loads on startup. If missing, creates from defaults.
 
 ## Engine architecture
 
-The jiggler engine runs in a **background daemon thread**. It uses `threading.Event`
-for pause/resume without busy-waiting.
-
 ```
-MainThread (UI)
-    └── JigglerEngine (Thread)
-            ├── Checks schedule every tick
-            ├── Calls movement function
-            ├── Sleeps for interval (with variance)
-            └── Fires callbacks to update UI status label
+MainThread (UI / tkinter mainloop)
+    └── JigglerEngine (daemon Thread)
+            ├── ScheduleManager → APScheduler BackgroundScheduler
+            │       └── fires apply_schedule() every 60s
+            ├── _tick(): iterates get_path() with per-step delay
+            │       └── detects user mouse movement mid-animation → aborts + resets origin
+            └── _interruptible_sleep(): wakes early on pause/stop
 ```
 
-The UI never blocks. All state changes from UI to engine go through thread-safe
-method calls on the engine instance (`engine.start()`, `engine.pause()`,
-`engine.set_mode(...)`, etc.).
+Key design:
+- `_running` (threading.Event): set = active, clear = paused.
+- `_stop` (threading.Event): set = thread exits.
+- `_origin`: cursor position at start of current jiggle session. Reset when user moves mouse > 4px from last engine position.
+- `_last_engine_pos`: where the engine last placed the cursor. Used to detect user movement.
+- All UI → engine calls are thread-safe (via `_lock` or atomic Event operations).
+- All engine → UI callbacks go through `app.after(0, callback)` to stay on the main thread.
 
 ---
 
 ## UI layout
 
-Single window with tabs:
-
 ```
-[MouseJiggler]  [Active: Scheduled]  [Zen 🍃]
+[MouseJiggler]           [Active: Scheduled]
 
 Tabs: [ Movement ] [ Schedule ] [ Settings ]
 
 --- Movement tab ---
-Movement type:  [dropdown: Micro Jiggle v]
-Amplitude:      [slider 1-50]  10px
-Interval:       [slider 5-300] 30s  Variance: [slider] 30%
-Speed:          [slider 0.1-2] 1.0x
-Jitter:         [slider 0-1]   0%
-Smooth motion:  [toggle]
+Movement type:  [Loop / Zen]
+Amplitude:      [slider 1-50]   10px
+Interval:       [slider 5-300]  30s
+Variance:       [slider 0-100]  30%
+Speed:          [slider 0.1-2]  1.0x
+Jitter:         [slider 0-1]    0%
 
 --- Schedule tab ---
-[ ] Use schedule
-[+ Add time window]
-List of schedule entries (editable, deletable)
-Each entry: days checkboxes + time range pickers
-
-[ ] Manual override (ignore schedule, always active)
+[ ] Enable schedule             [+ Add time window]
+┌─────────────────────────────────────────┐
+│ [toggle] Label      [✕]                 │
+│ Days: Mon Tue Wed Thu Fri Sat Sun       │
+│ From: 08:00  To: 18:00                  │
+└─────────────────────────────────────────┘
+[ ] Manual override (always active)
 
 --- Settings tab ---
-Hotkey:           [input field]
-Start with OS:    [toggle]
-Minimize on close:[toggle]
-Theme:            [Light / Dark]
+Start with OS:            [toggle]
+Minimize to tray on close:[toggle]
+Theme:                    [Dark / Light / System]
+
+--- Controls (bottom) ---
+[Start / Pause]
 ```
 
 ---
@@ -245,16 +235,13 @@ Theme:            [Light / Dark]
 ## Platform notes
 
 ### macOS specific
-- `pyautogui` requires Accessibility permissions in System Settings > Privacy & Security.
-- The app should detect if permissions are missing and show a clear alert with
-  instructions on how to enable them.
-- Do NOT use `pyautogui.FAILSAFE = True` in production (it breaks tray-only usage).
+- `pyautogui` requires Accessibility permissions (System Settings → Privacy & Security → Accessibility).
+- The app detects missing permissions on startup and shows a dialog.
+- `pyautogui.FAILSAFE = False` is set in the engine thread (prevents corner-of-screen abort in tray-only usage).
 
 ### Windows specific
-- Use `pyautogui.PAUSE = 0` to disable the default 0.1s delay between calls.
-- `pynput` global hotkeys work without admin on Windows.
-- PyInstaller build command for single exe:
-  `pyinstaller --onefile --windowed --icon=assets/icon.ico main.py`
+- `pyautogui.PAUSE = 0` is set in the engine thread.
+- PyInstaller build: `pyinstaller --onefile --windowed --icon=assets/icon.ico main.py`
 
 ---
 
@@ -270,6 +257,8 @@ APScheduler>=3.10.4
 pyinstaller>=6.0.0
 ```
 
+On macOS, also requires: `brew install python-tk@3.13` (Tk support for the Homebrew Python).
+
 ---
 
 ## What NOT to do
@@ -278,7 +267,7 @@ pyinstaller>=6.0.0
 - Do not use tkinter directly. Only CustomTkinter widgets.
 - Do not use global variables for state. State lives in the engine and config objects.
 - Do not hardcode paths. Always use `pathlib.Path` and the platform config directory.
-- Do not import platform-specific modules at the top level. Use lazy imports inside
-  platform-branched functions.
-- Do not move the mouse by absolute coordinates during normal operation. Always use
-  relative movement (`pyautogui.moveRel`) to avoid disrupting the user's cursor position.
+- Do not import platform-specific modules at the top level. Use lazy imports inside platform-branched functions.
+- Do not move the mouse by absolute coordinates. Always use `pyautogui.moveRel`.
+- Do not call UI methods directly from the engine thread. Always use `app.after(0, callback)`.
+- Do not add new movement modes without implementing `get_path()` with a path that ends at `(0.0, 0.0)`.
