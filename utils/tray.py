@@ -1,4 +1,5 @@
 from __future__ import annotations
+import platform
 import threading
 from typing import Callable, Optional
 from PIL import Image, ImageDraw
@@ -40,10 +41,15 @@ class TrayManager:
         self._icon: Optional[object] = None
 
     def start(self) -> None:
-        t = threading.Thread(target=self._run, daemon=True, name="TrayManager")
-        t.start()
+        if platform.system() == "Darwin":
+            # AppKit requires NSStatusItem to be created on the main thread.
+            # run_detached() sets up the icon without blocking so tkinter can run.
+            self._icon = self._create_icon()
+            self._icon.run_detached()
+        else:
+            threading.Thread(target=self._run, daemon=True, name="TrayManager").start()
 
-    def _run(self) -> None:
+    def _create_icon(self) -> object:
         import pystray
         img = _make_icon(_COLORS["stopped"])
         menu = pystray.Menu(
@@ -53,7 +59,10 @@ class TrayManager:
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit", self._on_quit),
         )
-        self._icon = pystray.Icon("MouseJiggler", img, "MouseJiggler – Stopped", menu)
+        return pystray.Icon("MouseJiggler", img, "MouseJiggler – Stopped", menu)
+
+    def _run(self) -> None:
+        self._icon = self._create_icon()
         self._icon.run()
 
     def update_state(self, status: str) -> None:
