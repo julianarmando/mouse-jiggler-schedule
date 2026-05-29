@@ -8,6 +8,7 @@ from ui.components import StatusBar
 from ui.tab_movement import MovementTab
 from ui.tab_schedule import ScheduleTab
 from ui.tab_settings import SettingsTab
+from ui.tab_about import AboutTab
 from utils.tray import TrayManager
 import utils.platform as platform_utils
 
@@ -83,6 +84,7 @@ class MouseJigglerApp(ctk.CTk):
         tabs.add("Movement")
         tabs.add("Schedule")
         tabs.add("Settings")
+        tabs.add("About")
 
         MovementTab(
             tabs.tab("Movement"), self._settings,
@@ -100,6 +102,8 @@ class MouseJigglerApp(ctk.CTk):
             on_theme_change=self._on_theme_change,
             on_startup_change=self._on_startup_change,
         ).pack(fill="both", expand=True)
+
+        AboutTab(tabs.tab("About")).pack(fill="both", expand=True)
 
         # Controls row
         controls = ctk.CTkFrame(self, fg_color="transparent")
