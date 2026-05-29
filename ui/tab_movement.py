@@ -58,7 +58,7 @@ class MovementTab(ctk.CTkFrame):
 
         # Speed
         self._speed = LabeledSlider(
-            self, "Speed", 0.1, 2.0, mc.speed,
+            self, "Speed", 0.1, 5.0, mc.speed,
             lambda v: f"{v:.1f}x", self._on_speed_change,
         )
         self._speed.grid(row=row, column=0, sticky="w", padx=16, pady=4)

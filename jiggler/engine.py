@@ -142,7 +142,7 @@ class JigglerEngine(threading.Thread):
 
             ox, oy = self._origin
             path = self._movement.get_path(mc.amplitude, mc.jitter)
-            step_delay = max(0.008, 0.04 / mc.speed)
+            step_delay = max(0.004, 0.04 / mc.speed)
             last_moved_to = (ox, oy)
 
             for dx, dy in path:
