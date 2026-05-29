@@ -1,4 +1,7 @@
 from __future__ import annotations
+import platform
+import sys
+from pathlib import Path
 import customtkinter as ctk
 from PIL import Image, ImageDraw
 from PIL.ImageTk import PhotoImage
@@ -11,6 +14,11 @@ from ui.tab_settings import SettingsTab
 from ui.tab_about import AboutTab
 from utils.tray import TrayManager
 import utils.platform as platform_utils
+
+def _resource(relative: str) -> Path:
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+    return base / relative
+
 
 _WHEEL_COLORS = {
     "active":  "#22c55e",
@@ -67,7 +75,7 @@ class MouseJigglerApp(ctk.CTk):
 
         self._dock_photo: PhotoImage | None = None
         self._build()
-        self._update_dock_icon("stopped")
+        self._set_window_icon()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(500, self._check_accessibility)
 
@@ -117,7 +125,6 @@ class MouseJigglerApp(ctk.CTk):
     # ── Accessibility check ───────────────────────────────────────────────
 
     def _check_accessibility(self) -> None:
-        import platform
         if platform.system() != "Darwin":
             return
         if not platform_utils.check_accessibility_permissions():
@@ -152,7 +159,17 @@ class MouseJigglerApp(ctk.CTk):
         self._toggle_btn.configure(text="Pause" if self._engine.is_running() else "Start")
         self._update_dock_icon(status)
 
+    def _set_window_icon(self) -> None:
+        if platform.system() == "Windows":
+            ico = _resource("assets/icon.ico")
+            if ico.exists():
+                self.iconbitmap(str(ico))
+        else:
+            self._update_dock_icon("stopped")
+
     def _update_dock_icon(self, status: str) -> None:
+        if platform.system() == "Windows":
+            return  # Windows uses static .ico; tray handles status color
         if "Active" in status:
             color = _WHEEL_COLORS["active"]
         elif "Paused" in status:
