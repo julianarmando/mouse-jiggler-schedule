@@ -1,9 +1,7 @@
 name: Build
 
 on:
-  workflow_dispatch:  # manual trigger only — run from Actions tab
-  push:
-    branches: [main]
+  workflow_dispatch:  # run manually from Actions tab
 
 jobs:
   build-windows:
