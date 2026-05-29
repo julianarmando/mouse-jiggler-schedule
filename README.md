@@ -12,8 +12,12 @@ Pre-built binaries are available on the [Releases page](../../releases/latest):
 
 | Platform | File |
 |---|---|
-| Windows | `MouseJigglerSchedule.exe` |
+| Windows | `MouseJigglerSchedule-windows.zip` → extract the folder, run `MouseJigglerSchedule.exe` from inside |
 | macOS | `MouseJigglerSchedule-mac.zip` → extract and move `.app` to Applications |
+
+> **Windows note:** The app is distributed as a folder (not a single `.exe`) to avoid false positives
+> from antivirus software and to run without administrator rights in corporate environments.
+> Do not move `MouseJigglerSchedule.exe` out of its folder — it requires the files next to it to run.
 
 ---
 
@@ -93,7 +97,7 @@ python main.py
 **Windows** — triggered manually via GitHub Actions:
 1. Push changes to `main`
 2. Go to **Actions → Build → Run workflow**
-3. Download `MouseJigglerSchedule.exe` from the Artifacts section
+3. Download `MouseJigglerSchedule-windows.zip` from the Artifacts section and extract it
 
 ---
 

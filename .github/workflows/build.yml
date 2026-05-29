@@ -23,7 +23,6 @@ jobs:
       - name: Build with PyInstaller
         run: >
           pyinstaller
-          --onefile
           --windowed
           --icon=assets/icon.ico
           --name=MouseJigglerSchedule
@@ -36,11 +35,11 @@ jobs:
           main.py
 
       - name: Verify build output
-        run: dir dist
+        run: dir dist\MouseJigglerSchedule
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: MouseJigglerSchedule-windows
-          path: dist/MouseJigglerSchedule.exe
+          path: dist/MouseJigglerSchedule/
           retention-days: 30
