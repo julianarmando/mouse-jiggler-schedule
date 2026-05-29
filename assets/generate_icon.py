@@ -46,21 +46,39 @@ def make_mouse_icon(wheel_color: str = "#22c55e", size: int = 256) -> Image.Imag
     return img
 
 
+def make_ico(path) -> None:
+    """Generate a multi-size .ico file for Windows (16, 32, 48, 64, 128, 256px)."""
+    import pathlib
+    sizes = [16, 32, 48, 64, 128, 256]
+    base = make_mouse_icon("#22c55e", size=256)
+    frames = [base.resize((s, s), Image.LANCZOS) for s in sizes]
+    frames[-1].save(
+        pathlib.Path(path),
+        format="ICO",
+        sizes=[(s, s) for s in sizes],
+        append_images=frames[:-1],
+    )
+
+
 if __name__ == "__main__":
-    import sys, pathlib
+    import pathlib
 
-    out = pathlib.Path(__file__).parent / "icon.png"
-    icon = make_mouse_icon("#22c55e")
-    icon.save(out)
-    print(f"Saved {out}")
+    assets = pathlib.Path(__file__).parent
 
-    # Show a quick preview with all three states side by side
+    # PNG for macOS dock
+    png_out = assets / "icon.png"
+    make_mouse_icon("#22c55e").save(png_out)
+    print(f"Saved {png_out}")
+
+    # ICO for Windows
+    ico_out = assets / "icon.ico"
+    make_ico(ico_out)
+    print(f"Saved {ico_out}")
+
+    # Preview all three states side by side
     preview = Image.new("RGBA", (256 * 3 + 40, 256 + 20), (40, 40, 40, 255))
-    for i, (color, label) in enumerate([
-        ("#22c55e", "active"),
-        ("#eab308", "paused"),
-        ("#6b7280", "stopped"),
-    ]):
-        preview.paste(make_mouse_icon(color), (i * 256 + (i + 1) * 10, 10), mask=make_mouse_icon(color))
-    preview.save(pathlib.Path(__file__).parent / "icon_preview.png")
-    print("Preview saved to assets/icon_preview.png")
+    for i, color in enumerate(["#22c55e", "#eab308", "#6b7280"]):
+        img = make_mouse_icon(color)
+        preview.paste(img, (i * 256 + (i + 1) * 10, 10), mask=img)
+    preview.save(assets / "icon_preview.png")
+    print(f"Saved {assets / 'icon_preview.png'}")
