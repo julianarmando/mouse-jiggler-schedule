@@ -149,7 +149,6 @@ class JigglerEngine(threading.Thread):
                 if self._stop.is_set() or not self._running.is_set():
                     return
                 cur = pyautogui.position()
-                # Abort animation if user moved the mouse
                 if abs(cur[0] - last_moved_to[0]) > 6 or abs(cur[1] - last_moved_to[1]) > 6:
                     self._origin = None
                     self._last_engine_pos = None
@@ -164,8 +163,11 @@ class JigglerEngine(threading.Thread):
                 time.sleep(step_delay)
 
             self._last_engine_pos = last_moved_to
-        except Exception:
-            pass
+        except Exception as e:
+            self._origin = None
+            self._last_engine_pos = None
+            if self.on_status_change:
+                self.on_status_change(f"Error: {e}")
 
     def _interruptible_sleep(self, seconds: float) -> None:
         deadline = time.monotonic() + seconds
