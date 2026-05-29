@@ -36,6 +36,7 @@ class JigglerEngine(threading.Thread):
         self._origin: Optional[tuple[float, float]] = None
         self._last_engine_pos: Optional[tuple[float, float]] = None
         self._current_status = Status.STOPPED
+        self._paused_by_schedule = False
 
     # ── Thread lifecycle ──────────────────────────────────────────────────
 
@@ -61,14 +62,16 @@ class JigglerEngine(threading.Thread):
             self._origin = None
             self._last_engine_pos = None
             self._movement.reset()
+            self._paused_by_schedule = False
             self._running.set()
         self._emit_status()
 
-    def pause(self) -> None:
+    def pause(self, by_schedule: bool = False) -> None:
         with self._lock:
             self._running.clear()
             self._origin = None
             self._last_engine_pos = None
+            self._paused_by_schedule = by_schedule
         self._emit_status()
 
     def toggle(self) -> None:
@@ -107,7 +110,10 @@ class JigglerEngine(threading.Thread):
         if should_run and not self._running.is_set():
             self.resume()
         elif not should_run and self._running.is_set():
-            self.pause()
+            self.pause(by_schedule=True)
+        elif not should_run and not self._running.is_set():
+            self._paused_by_schedule = True
+            self._emit_status()
         else:
             self._emit_status()
 
@@ -177,7 +183,7 @@ class JigglerEngine(threading.Thread):
     def _emit_status(self) -> None:
         config = self._settings.config
         if not self._running.is_set():
-            status = Status.STOPPED
+            status = Status.PAUSED_SCHEDULE if self._paused_by_schedule else Status.STOPPED
         elif config.manual_override:
             status = Status.ACTIVE_OVERRIDE
         elif config.schedule_enabled and config.schedule:
