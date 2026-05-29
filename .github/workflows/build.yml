@@ -3,6 +3,9 @@ name: Build
 on:
   workflow_dispatch:  # run manually from Actions tab
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -25,6 +28,9 @@ jobs:
           --icon=assets/icon.ico
           --name=MouseJigglerSchedule
           main.py
+
+      - name: Verify build output
+        run: dir dist
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
