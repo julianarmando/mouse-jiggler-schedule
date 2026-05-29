@@ -268,9 +268,10 @@ https://github.com/julianarmando/mouse-jiggler-schedule
 
 ### macOS specific
 - `pyautogui` requires Accessibility permissions (System Settings → Privacy & Security → Accessibility).
-- The app detects missing permissions on startup and shows a dialog.
+- The app detects missing permissions on startup and shows a dialog. The check uses `AXIsProcessTrusted()` via `ctypes` (ApplicationServices framework) — this correctly checks the current process, not a subprocess.
 - `pyautogui.FAILSAFE = False` is set in the engine thread (prevents corner-of-screen abort in tray-only usage).
 - Dock icon is set via `self.iconphoto(True, photo)` using a Pillow-generated `PhotoImage`.
+- `pystray` must be initialized on the main thread on macOS (AppKit requirement). `TrayManager.start()` uses `run_detached()` when on Darwin instead of spawning a background thread.
 
 ### Windows specific
 - `pyautogui.PAUSE = 0` is set in the engine thread.
@@ -283,13 +284,32 @@ https://github.com/julianarmando/mouse-jiggler-schedule
 
 ### macOS (local)
 
+Use the build script (runs from project root):
+
 ```bash
-source .venv/bin/activate
-pyinstaller --windowed --icon=assets/icon.png --name=MouseJigglerSchedule main.py
-# Output: dist/MouseJigglerSchedule.app
-# Zip it for distribution:
+./build_mac.sh
+# Output: dist/MouseJigglerSchedule-mac.zip
+```
+
+The script (`build_mac.sh`) activates the venv and runs:
+
+```bash
+pyinstaller \
+  --windowed \
+  --icon=assets/icon.png \
+  --name=MouseJigglerSchedule \
+  --collect-all customtkinter \
+  --collect-all pyautogui \
+  --hidden-import pystray._darwin \
+  --hidden-import pynput.keyboard._darwin \
+  --hidden-import pynput.mouse._darwin \
+  --add-data "assets/icon.png:assets" \
+  main.py
 cd dist && zip -r MouseJigglerSchedule-mac.zip MouseJigglerSchedule.app
 ```
+
+> **Note:** The `--add-data` separator on macOS is `:` (on Windows it is `;`).
+> After first launch, grant Accessibility permissions in **System Settings → Privacy & Security → Accessibility**.
 
 ### Windows (GitHub Actions)
 

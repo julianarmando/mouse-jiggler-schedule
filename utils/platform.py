@@ -12,13 +12,11 @@ def check_accessibility_permissions() -> bool:
     if get_os() != "Darwin":
         return True
     try:
-        import subprocess
-        result = subprocess.run(
-            ["osascript", "-e",
-             'tell application "System Events" to get name of first process whose frontmost is true'],
-            capture_output=True, timeout=2,
-        )
-        return result.returncode == 0
+        import ctypes
+        import ctypes.util
+        lib = ctypes.cdll.LoadLibrary(ctypes.util.find_library("ApplicationServices"))
+        lib.AXIsProcessTrusted.restype = ctypes.c_bool
+        return lib.AXIsProcessTrusted()
     except Exception:
         return False
 

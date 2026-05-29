@@ -6,6 +6,17 @@ Built with Python + CustomTkinter.
 
 ---
 
+## Download
+
+Pre-built binaries are available on the [Releases page](../../releases/latest):
+
+| Platform | File |
+|---|---|
+| Windows | `MouseJigglerSchedule.exe` |
+| macOS | `MouseJigglerSchedule-mac.zip` → extract and move `.app` to Applications |
+
+---
+
 ## Screenshots
 
 | Movement | Schedule |
@@ -44,7 +55,7 @@ Built with Python + CustomTkinter.
 
 ---
 
-## Installation
+## Building from source
 
 **Requirements:** Python 3.11+
 
@@ -70,6 +81,19 @@ python main.py
 > **macOS note:** The app requires Accessibility permissions to move the mouse.  
 > Go to **System Settings → Privacy & Security → Accessibility** and enable it.  
 > A dialog will appear on first launch as a reminder.
+
+### Package as a native app
+
+**macOS** — run the build script from the project root:
+```bash
+./build_mac.sh
+# Output: dist/MouseJigglerSchedule-mac.zip
+```
+
+**Windows** — triggered manually via GitHub Actions:
+1. Push changes to `main`
+2. Go to **Actions → Build → Run workflow**
+3. Download `MouseJigglerSchedule.exe` from the Artifacts section
 
 ---
 
