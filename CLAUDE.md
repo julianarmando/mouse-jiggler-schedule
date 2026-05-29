@@ -1,4 +1,4 @@
-# MouseJiggler - Project Context for AI-Assisted Development
+# Mouse Jiggler Schedule - Project Context for AI-Assisted Development
 
 ## What is this project
 
@@ -26,9 +26,9 @@ with fine-grained control over how and when the mouse moves.
 ## Project structure
 
 ```
-mouse_jiggler/
+mouse-jiggler-schedule/
 ├── main.py                  # Entry point, wires engine + tray + app
-├── app.py                   # Main window (CustomTkinter)
+├── app.py                   # Main window (CustomTkinter), dock icon generation
 ├── jiggler/
 │   ├── __init__.py
 │   ├── engine.py            # Core movement logic, background thread
@@ -39,6 +39,7 @@ mouse_jiggler/
 │   ├── tab_movement.py      # Tab: movement type + randomization options
 │   ├── tab_schedule.py      # Tab: schedule editor (days + time ranges)
 │   ├── tab_settings.py      # Tab: general settings (startup, tray, theme)
+│   ├── tab_about.py         # Tab: app name, author, GitHub link
 │   └── components.py        # Reusable widgets (LabeledSlider, StatusBar)
 ├── config/
 │   ├── __init__.py
@@ -47,7 +48,10 @@ mouse_jiggler/
 │   ├── __init__.py
 │   ├── platform.py          # OS detection, startup registration, accessibility check
 │   └── tray.py              # System tray icon and menu
-├── assets/                  # Icon assets (generated programmatically if absent)
+├── assets/
+│   ├── generate_icon.py     # Standalone script to regenerate/preview dock icons
+│   ├── icon.png             # Current dock icon (mouse shape, green wheel = active)
+│   └── icon_preview.png     # Side-by-side preview of all three status states
 ├── config.json              # Auto-generated user config (gitignored)
 ├── requirements.txt
 └── CLAUDE.md                # This file
@@ -79,8 +83,9 @@ Exposed as sliders in the Movement tab, stored in config:
 - `interval_base` (int, seconds): wait time between animation cycles.
 - `interval_variance` (float, 0.0–1.0): random variation on the interval.
   - Actual interval = `interval_base * (1 + random(-variance, +variance))`
-- `speed` (float, 0.1–2.0): controls per-step delay inside the animation.
-  - `step_delay = max(0.008, 0.04 / speed)` seconds per path step.
+- `speed` (float, 0.1–5.0): controls per-step delay inside the animation.
+  - `step_delay = max(0.004, 0.04 / speed)` seconds per path step.
+  - At 5.0x each step takes ~4ms. Practical cap is ~10x before the floor bites.
 - `jitter` (float, 0.0–1.0): additional pixel noise (currently passed to `get_path` but not yet used by Loop/Zen).
 
 `smooth_movement` remains in the config dataclass (for future use) but has no UI control and does not affect the engine — animations are always smooth.
@@ -108,12 +113,19 @@ The engine checks:
 2. `schedule_enabled = false` OR `schedule` is empty → no automatic control.
 3. Otherwise: activate if current time is inside any enabled entry, pause if not.
 
+The `_paused_by_schedule` flag in the engine distinguishes between user-initiated stops
+and automatic schedule pauses, so the correct status label is shown.
+
 Status labels shown in the UI:
 - `"Active (scheduled)"` — running due to schedule
 - `"Active (manual override)"` — running due to override
 - `"Active"` — running, no schedule configured
-- `"Paused (outside schedule)"` — auto-paused by schedule
-- `"Stopped"` — manually stopped
+- `"Paused (outside schedule)"` — auto-paused by schedule (yellow in tray + dock)
+- `"Stopped"` — manually stopped by user
+
+Note: if the schedule is enabled and the current time is within a window, the engine will
+auto-start even if the user previously pressed Pause. To prevent auto-start, disable the
+schedule or turn on manual override.
 
 ### 4. System tray
 
@@ -129,18 +141,32 @@ Tray menu:
 - Show Window
 - Quit
 
-### 5. Global hotkey
+### 5. Dock icon (macOS)
+
+The macOS Dock icon is a flat mouse shape generated with Pillow at runtime. The scroll
+wheel changes color to reflect the current status (same green/yellow/gray as the tray).
+Updated via `self.iconphoto(True, photo)` whenever status changes.
+
+`assets/generate_icon.py` can be run standalone to regenerate `icon.png` or preview all
+three status states side by side in `icon_preview.png`.
+
+### 6. About tab
+
+Static tab showing the app name ("Mouse Jiggler Schedule"), author handle ("@julianarmando"),
+and a clickable link to the GitHub repository. Opens in the default browser via `webbrowser.open()`.
+
+### 7. Global hotkey
 
 Defined in config (`hotkey` field). Not yet wired to `pynput` — field exists in config but the listener is not implemented. Default value: `"ctrl+shift+j"`.
 
-### 6. Startup with OS (no admin required)
+### 8. Startup with OS (no admin required)
 
 - **Windows**: `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run` via `winreg`.
 - **macOS**: LaunchAgent plist at `~/Library/LaunchAgents/com.mousejiggler.plist`.
 
 Handled in `utils/platform.py`. Toggle in Settings tab calls `platform_utils.set_startup(enabled)`.
 
-### 7. Config persistence
+### 9. Config persistence
 
 Config path:
 - Windows: `%APPDATA%\MouseJiggler\config.json`
@@ -188,8 +214,9 @@ MainThread (UI / tkinter mainloop)
 ```
 
 Key design:
-- `_running` (threading.Event): set = active, clear = paused.
+- `_running` (threading.Event): set = active, clear = paused/stopped.
 - `_stop` (threading.Event): set = thread exits.
+- `_paused_by_schedule` (bool): True when the schedule auto-paused the engine. Determines whether status is `PAUSED_SCHEDULE` or `STOPPED` when `_running` is clear.
 - `_origin`: cursor position at start of current jiggle session. Reset when user moves mouse > 4px from last engine position.
 - `_last_engine_pos`: where the engine last placed the cursor. Used to detect user movement.
 - All UI → engine calls are thread-safe (via `_lock` or atomic Event operations).
@@ -200,17 +227,17 @@ Key design:
 ## UI layout
 
 ```
-[MouseJiggler]           [Active: Scheduled]
+[Mouse Jiggler Schedule]     [Active (scheduled)]  [Pause]
 
-Tabs: [ Movement ] [ Schedule ] [ Settings ]
+Tabs: [ Movement ] [ Schedule ] [ Settings ] [ About ]
 
 --- Movement tab ---
 Movement type:  [Loop / Zen]
-Amplitude:      [slider 1-50]   10px
-Interval:       [slider 5-300]  30s
-Variance:       [slider 0-100]  30%
-Speed:          [slider 0.1-2]  1.0x
-Jitter:         [slider 0-1]    0%
+Amplitude:      [slider 1-50]    10px
+Interval:       [slider 5-300]   30s
+Variance:       [slider 0-100%]  30%
+Speed:          [slider 0.1-5]   1.0x
+Jitter:         [slider 0-100%]  0%
 
 --- Schedule tab ---
 [ ] Enable schedule             [+ Add time window]
@@ -226,6 +253,11 @@ Start with OS:            [toggle]
 Minimize to tray on close:[toggle]
 Theme:                    [Dark / Light / System]
 
+--- About tab ---
+Mouse Jiggler Schedule
+@julianarmando
+https://github.com/julianarmando/mouse-jiggler-schedule
+
 --- Controls (bottom) ---
 [Start / Pause]
 ```
@@ -238,6 +270,7 @@ Theme:                    [Dark / Light / System]
 - `pyautogui` requires Accessibility permissions (System Settings → Privacy & Security → Accessibility).
 - The app detects missing permissions on startup and shows a dialog.
 - `pyautogui.FAILSAFE = False` is set in the engine thread (prevents corner-of-screen abort in tray-only usage).
+- Dock icon is set via `self.iconphoto(True, photo)` using a Pillow-generated `PhotoImage`.
 
 ### Windows specific
 - `pyautogui.PAUSE = 0` is set in the engine thread.
