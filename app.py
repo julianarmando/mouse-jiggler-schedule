@@ -1,5 +1,7 @@
 from __future__ import annotations
 import customtkinter as ctk
+from PIL import Image, ImageDraw
+from PIL.ImageTk import PhotoImage
 from config.settings import Settings
 from jiggler.engine import JigglerEngine
 from ui.components import StatusBar
@@ -8,6 +10,46 @@ from ui.tab_schedule import ScheduleTab
 from ui.tab_settings import SettingsTab
 from utils.tray import TrayManager
 import utils.platform as platform_utils
+
+_WHEEL_COLORS = {
+    "active":  "#22c55e",
+    "paused":  "#eab308",
+    "stopped": "#6b7280",
+}
+
+
+def _make_dock_icon(wheel_color: str, size: int = 256) -> Image.Image:
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+
+    def p(v):
+        return int(v * size / 256)
+
+    cx = size // 2
+
+    # drop shadow
+    sw = p(6)
+    d.rounded_rectangle(
+        [p(64 + sw), p(24 + sw), p(192 + sw), p(232 + sw)],
+        radius=p(56), fill=(0, 0, 0, 55),
+    )
+    # body
+    d.rounded_rectangle([p(64), p(24), p(192), p(232)], radius=p(56),
+                         fill="#1e1e2e", outline="#3a3a5c", width=p(2))
+    # button zone
+    btn_bottom = p(112)
+    d.rounded_rectangle([p(64), p(24), p(192), btn_bottom], radius=p(56),
+                         fill="#2a2a3e", outline="#3a3a5c", width=p(2))
+    d.rectangle([p(66), btn_bottom - p(56), p(190), btn_bottom], fill="#2a2a3e")
+    # dividers
+    d.line([(p(66), btn_bottom), (p(190), btn_bottom)], fill="#3a3a5c", width=p(2))
+    d.line([(cx, p(26)), (cx, btn_bottom - p(2))],      fill="#3a3a5c", width=p(2))
+    # scroll wheel
+    ww, wh = p(22), p(44)
+    wx = cx - ww // 2
+    d.rounded_rectangle([wx, p(38), wx + ww, p(38) + wh], radius=p(10), fill=wheel_color)
+
+    return img
 
 
 class MouseJigglerApp(ctk.CTk):
@@ -22,7 +64,9 @@ class MouseJigglerApp(ctk.CTk):
         self.geometry("580x500")
         self.resizable(False, False)
 
+        self._dock_photo: PhotoImage | None = None
         self._build()
+        self._update_dock_icon("stopped")
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(500, self._check_accessibility)
 
@@ -102,14 +146,23 @@ class MouseJigglerApp(ctk.CTk):
         self._status_bar.set_status(status)
         self._tray.update_state(status)
         self._toggle_btn.configure(text="Pause" if self._engine.is_running() else "Start")
+        self._update_dock_icon(status)
+
+    def _update_dock_icon(self, status: str) -> None:
+        if "Active" in status:
+            color = _WHEEL_COLORS["active"]
+        elif "Paused" in status:
+            color = _WHEEL_COLORS["paused"]
+        else:
+            color = _WHEEL_COLORS["stopped"]
+        self._dock_photo = PhotoImage(_make_dock_icon(color))
+        self.iconphoto(True, self._dock_photo)
 
     # ── User actions ──────────────────────────────────────────────────────
 
     def _toggle(self) -> None:
         self._engine.toggle()
-        self._toggle_btn.configure(text="Pause" if self._engine.is_running() else "Start")
-        self._status_bar.set_status(self._engine.get_status())
-        self._tray.update_state(self._engine.get_status())
+        self._apply_status(self._engine.get_status())
 
     def _on_movement_change(self) -> None:
         self._engine.set_mode(self._settings.config.movement.mode)
